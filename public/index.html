@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>BTC Price Control Panel</title>
+    <title>Delta Source Switcher</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -62,79 +62,54 @@
         border: 1px solid #ccc;
         margin-right: 6px;
       }
-      .pill-api {
+      .pill-ws {
         background: #e3f2fd;
         border-color: #64b5f6;
       }
-      .pill-manual {
+      .pill-rest {
         background: #fff3e0;
         border-color: #ffb74d;
       }
-      .pill-up {
-        background: #e8f5e9;
-        border-color: #81c784;
-      }
-      .pill-down {
-        background: #ffebee;
-        border-color: #e57373;
-      }
-      .pill-none {
-        background: #eeeeee;
-        border-color: #bdbdbd;
+      .pill-random {
+        background: #f3e5f5;
+        border-color: #ba68c8;
       }
     </style>
   </head>
   <body>
-    <h1>BTC Price Control Panel</h1>
+    <h1>Delta Source Switcher (WS vs REST)</h1>
 
     <div class="cards">
       <div class="card">
-        <div class="label">Current Price (/btc-price)</div>
-        <div class="value" id="priceValue">--</div>
+        <div class="label">Active Price (/active-price)</div>
+        <div class="value" id="activePrice">--</div>
         <div class="muted">
-          Symbol: <span id="symbolValue">--</span>
-        </div>
-        <div class="muted" style="margin-top: 8px">
-          Mode:
-          <span id="modePill" class="pill pill-none">
-            <span id="modeValue">--</span>
-          </span>
-          Direction:
-          <span id="directionPill" class="pill pill-none">
-            <span id="directionValue">--</span>
+          Symbol: <span id="activeSymbol">--</span><br />
+          Source:
+          <span id="activeSourcePill" class="pill">
+            <span id="activeSource">--</span>
           </span>
         </div>
       </div>
 
       <div class="card">
-        <div class="label">Comparison (/btc-price-compare)</div>
+        <div class="label">Compare (/price-compare)</div>
         <div class="muted" style="margin-top: 8px">
-          App price:
-          <strong id="currentPriceValue">--</strong><br />
-          External price:
-          <strong id="externalPriceValue">--</strong>
+          WS price:
+          <strong id="wsPrice">--</strong><br />
+          REST price:
+          <strong id="restPrice">--</strong>
         </div>
       </div>
 
       <div class="card">
-        <div class="label">Mode Controls</div>
+        <div class="label">Source Mode</div>
         <div style="margin-top: 8px">
-          <button id="apiModeBtn">API Mode</button>
-          <button id="manualModeBtn">Manual Mode</button>
-        </div>
-        <div class="muted">API: random external price each time.</div>
-        <div class="muted">MANUAL: price moves only on your commands.</div>
-      </div>
-
-      <div class="card">
-        <div class="label">Manual Price Controls</div>
-        <div style="margin-top: 8px">
-          <button id="upBtn">Price Up (+50)</button>
-          <button id="downBtn">Price Down (-50)</button>
-          <button id="stopBtn">Stop Movement</button>
+          <button id="wsModeBtn">Use WebSocket</button>
+          <button id="restModeBtn">Use REST</button>
         </div>
         <div class="muted">
-          Direction moves price when MANUAL and when /btc-price is called.
+          /active-price returns whichever source you select here.
         </div>
       </div>
     </div>
@@ -145,140 +120,99 @@
     </div>
 
     <script>
-      console.log("BTC Price Control Panel script loaded");
+      console.log("Delta Source Switcher script loaded");
 
-      const priceValue = document.getElementById("priceValue");
-      const symbolValue = document.getElementById("symbolValue");
-      const modeValue = document.getElementById("modeValue");
-      const directionValue = document.getElementById("directionValue");
-      const modePill = document.getElementById("modePill");
-      const directionPill = document.getElementById("directionPill");
-      const currentPriceValue = document.getElementById("currentPriceValue");
-      const externalPriceValue = document.getElementById("externalPriceValue");
+      const activePrice = document.getElementById("activePrice");
+      const activeSymbol = document.getElementById("activeSymbol");
+      const activeSource = document.getElementById("activeSource");
+      const activeSourcePill = document.getElementById("activeSourcePill");
+
+      const wsPriceEl = document.getElementById("wsPrice");
+      const restPriceEl = document.getElementById("restPrice");
       const refreshBtn = document.getElementById("refreshBtn");
 
-      const apiModeBtn = document.getElementById("apiModeBtn");
-      const manualModeBtn = document.getElementById("manualModeBtn");
-      const upBtn = document.getElementById("upBtn");
-      const downBtn = document.getElementById("downBtn");
-      const stopBtn = document.getElementById("stopBtn");
+      const wsModeBtn = document.getElementById("wsModeBtn");
+      const restModeBtn = document.getElementById("restModeBtn");
 
-      function setModePill(mode) {
-        modePill.className = "pill";
-        if (mode === "API") {
-          modePill.classList.add("pill-api");
-        } else if (mode === "MANUAL") {
-          modePill.classList.add("pill-manual");
-        } else {
-          modePill.classList.add("pill-none");
+      function setSourcePill(source) {
+        activeSourcePill.className = "pill";
+        if (source.startsWith("WS")) {
+          activeSourcePill.classList.add("pill-ws");
+        } else if (source.startsWith("REST")) {
+          activeSourcePill.classList.add("pill-rest");
+        } else if (source.startsWith("RANDOM")) {
+          activeSourcePill.classList.add("pill-random");
         }
       }
 
-      function setDirectionPill(direction) {
-        directionPill.className = "pill";
-        if (direction === "up") {
-          directionPill.classList.add("pill-up");
-        } else if (direction === "down") {
-          directionPill.classList.add("pill-down");
-        } else if (direction === "none") {
-          directionPill.classList.add("pill-none");
-        } else {
-          directionPill.classList.add("pill-none");
-        }
-      }
-
-      async function loadPrice() {
+      async function loadActivePrice() {
         try {
-          console.log("Fetching /btc-price...");
-          const res = await fetch("/btc-price");
-          console.log("Status /btc-price:", res.status);
+          console.log("Fetching /active-price...");
+          const res = await fetch("/active-price");
+          console.log("Status /active-price:", res.status);
           const data = await res.json();
-          console.log("Data /btc-price:", data);
+          console.log("Data /active-price:", data);
 
           if (data.price != null) {
-            priceValue.textContent = Number(data.price).toFixed(2);
+            activePrice.textContent = Number(data.price).toFixed(2);
           } else {
-            priceValue.textContent = "--";
+            activePrice.textContent = "--";
           }
 
-          symbolValue.textContent = data.symbol || "--";
-          modeValue.textContent = data.mode || "--";
-          directionValue.textContent = data.manualDirection || "--";
-
-          setModePill(data.mode);
-          setDirectionPill(data.manualDirection);
+          activeSymbol.textContent = data.symbol || "--";
+          activeSource.textContent = data.source || "--";
+          setSourcePill(data.source || "--");
         } catch (err) {
-          console.error("Error fetching /btc-price", err);
-          priceValue.textContent = "Error";
+          console.error("Error fetching /active-price", err);
+          activePrice.textContent = "Error";
         }
       }
 
       async function loadCompare() {
         try {
-          console.log("Fetching /btc-price-compare...");
-          const res = await fetch("/btc-price-compare");
-          console.log("Status /btc-price-compare:", res.status);
+          console.log("Fetching /price-compare...");
+          const res = await fetch("/price-compare");
+          console.log("Status /price-compare:", res.status);
           const data = await res.json();
-          console.log("Data /btc-price-compare:", data);
+          console.log("Data /price-compare:", data);
 
-          if (data.currentPrice != null) {
-            currentPriceValue.textContent = Number(
-              data.currentPrice
-            ).toFixed(2);
+          if (data.wsPrice != null) {
+            wsPriceEl.textContent = Number(data.wsPrice).toFixed(2);
           } else {
-            currentPriceValue.textContent = "--";
+            wsPriceEl.textContent = "--";
           }
 
-          if (data.externalPrice != null) {
-            externalPriceValue.textContent = Number(
-              data.externalPrice
-            ).toFixed(2);
+          if (data.restPrice != null) {
+            restPriceEl.textContent = Number(data.restPrice).toFixed(2);
           } else {
-            externalPriceValue.textContent = "--";
+            restPriceEl.textContent = "--";
           }
         } catch (err) {
-          console.error("Error fetching /btc-price-compare", err);
-          currentPriceValue.textContent = "Error";
-          externalPriceValue.textContent = "Error";
+          console.error("Error fetching /price-compare", err);
+          wsPriceEl.textContent = "Error";
+          restPriceEl.textContent = "Error";
         }
       }
 
       async function refreshAll() {
-        await loadPrice();
+        await loadActivePrice();
         await loadCompare();
       }
 
-      async function setMode(mode) {
-        console.log("Setting mode to:", mode);
+      async function setSourceMode(mode) {
+        console.log("Setting source mode to:", mode);
         try {
-          const res = await fetch("/mode", {
+          const res = await fetch("/source-mode", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mode }),
           });
-          console.log("Status /mode:", res.status);
+          console.log("Status /source-mode:", res.status);
           const data = await res.json();
-          console.log("Data /mode:", data);
+          console.log("Data /source-mode:", data);
           await refreshAll();
         } catch (err) {
-          console.error("Error setting mode:", err);
-        }
-      }
-
-      async function setDirection(direction) {
-        console.log("Setting direction to:", direction);
-        try {
-          const res = await fetch("/manual-direction", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ direction }),
-          });
-          console.log("Status /manual-direction:", res.status);
-          const data = await res.json();
-          console.log("Data /manual-direction:", data);
-          await refreshAll();
-        } catch (err) {
-          console.error("Error setting direction:", err);
+          console.error("Error setting source mode:", err);
         }
       }
 
@@ -287,12 +221,8 @@
         refreshAll();
       });
 
-      apiModeBtn.addEventListener("click", () => setMode("API"));
-      manualModeBtn.addEventListener("click", () => setMode("MANUAL"));
-
-      upBtn.addEventListener("click", () => setDirection("up"));
-      downBtn.addEventListener("click", () => setDirection("down"));
-      stopBtn.addEventListener("click", () => setDirection("none"));
+      wsModeBtn.addEventListener("click", () => setSourceMode("WS"));
+      restModeBtn.addEventListener("click", () => setSourceMode("REST"));
 
       // Initial load
       refreshAll();
