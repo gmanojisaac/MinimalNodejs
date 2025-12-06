@@ -8,8 +8,9 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "delta-rest-client": "^1.0.0",
     "express": "^4.19.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
